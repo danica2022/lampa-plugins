@@ -1,3 +1,4 @@
+// NeverShow Plugin v1.2
 (function () {
     'use strict';
 
