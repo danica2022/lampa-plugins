@@ -1,4 +1,4 @@
-// NeverShow Plugin v1.2
+// NeverShow Plugin v1.3
 (function () {
     'use strict';
 
@@ -24,7 +24,7 @@
         list.push({
             id: String(card.id),
             title: card.title || card.name || '—',
-            poster: card.poster || '',
+            poster: card.poster || card.poster_path || '',
             type: card.type || 'movie'
         });
         saveList(list);
@@ -48,7 +48,7 @@
                 if (item.poster) html += '<img src="' + item.poster + '" style="width:55px;height:80px;object-fit:cover;border-radius:.3em;">';
                 html += '<div style="flex:1">';
                 html += '<div style="font-size:1.1em;">' + item.title + '</div>';
-                html += '<div style="font-size:.8em;opacity:.5;margin-top:.3em;">Натисніть OK щоб розблокувати</div>';
+                html += '<div style="font-size:.8em;opacity:.5;margin-top:.3em;">Натисніть щоб розблокувати</div>';
                 html += '</div></div>';
             });
             html += '<div style="margin-top:1.5em;"><button class="ns-clear selector" style="padding:.5em 1.4em;font-size:1em;">🗑️ Очистити весь список</button></div>';
@@ -78,55 +78,53 @@
         });
     }
 
+    function addButton(root, card) {
+        // Прибираємо стару кнопку якщо є
+        root.find('.ns-btn').remove();
+
+        var blocked = isBlocked(card);
+        var btn = $('<div class="full-start__button selector ns-btn">' +
+            '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2">' +
+            '<circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/>' +
+            '</svg>' +
+            '<span>' + (blocked ? 'Розблокувати' : 'Ніколи не показувати') + '</span>' +
+            '</div>');
+
+        btn.on('hover:enter', function () {
+            if (isBlocked(card)) {
+                unblock(String(card.id));
+                btn.find('span').text('Ніколи не показувати');
+            } else {
+                block(card);
+                btn.find('span').text('Розблокувати');
+            }
+        });
+
+        root.find('.full-start-new__buttons').append(btn);
+    }
+
     function startPlugin() {
         window.nevershowplugin = true;
 
-        // Фільтрувати картки у всіх списках
+        // Фільтр у всіх списках
         Lampa.Listener.follow('full', function (e) {
             if (e.type === 'complite' && e.data && Array.isArray(e.data.results)) {
                 e.data.results = e.data.results.filter(function (c) { return !isBlocked(c); });
             }
         });
 
-        // Контекстне меню (довге натискання)
-        Lampa.Listener.follow('context', function (e) {
-            if (e.type === 'complite' && e.card) {
-                var card = e.card;
-                var blocked = isBlocked(card);
-                e.data.push({
-                    title: blocked ? '✅ Розблокувати' : '🚫 Ніколи не показувати',
-                    action: function () {
-                        if (blocked) unblock(String(card.id));
-                        else block(card);
-                    }
-                });
-            }
-        });
-
-        // Кнопки на картці фільму
+        // Кнопка в картці фільму — точний патерн з Nightingale
         Lampa.Listener.follow('full', function (e) {
-            if (e.type === 'build' && e.name === 'start' && e.object) {
-                var card = e.object.activity && e.object.activity.card;
-                if (!card) return;
-                var blocked = isBlocked(card);
-                e.html.find('.full-start__buttons, .full-start-new__buttons').append(
-                    $('<div class="full-start__button selector ns-btn" style="cursor:pointer;">' +
-                        '<div class="full-start__button-icon">' +
-                        (blocked ? '✅' : '🚫') +
-                        '</div>' +
-                        '<div class="full-start__button-name">' +
-                        (blocked ? 'Розблокувати' : 'Ніколи не показувати') +
-                        '</div></div>'
-                    ).on('click', function () {
-                        if (blocked) unblock(String(card.id));
-                        else block(card);
-                    })
-                );
-            }
+            if (e.type !== 'build' || e.name !== 'start') return;
+            var root = e.item && e.item.html ? e.item.html : null;
+            if (!root) return;
+            var card = e.data && e.data.movie ? e.data.movie : null;
+            if (!card) return;
+            addButton(root, card);
         });
     }
 
-    // Створюємо розділ в налаштуваннях
+    // Налаштування
     Lampa.SettingsApi.addComponent({
         component: 'never_show',
         name: '🚫 Приховані фільми',
@@ -135,27 +133,17 @@
 
     Lampa.SettingsApi.addParam({
         component: 'never_show',
-        param: {
-            name: 'never_show_open',
-            type: 'button',
-            default: false
-        },
+        param: { name: 'never_show_open', type: 'button', default: false },
         field: {
-            name: 'Переглянути список прихованих фільмів',
+            name: 'Переглянути список прихованих',
             description: 'Тут можна розблокувати фільми'
         },
-        onChange: function () {
-            openList();
-        }
+        onChange: function () { openList(); }
     });
 
     Lampa.SettingsApi.addParam({
         component: 'never_show',
-        param: {
-            name: 'never_show_clear',
-            type: 'button',
-            default: false
-        },
+        param: { name: 'never_show_clear', type: 'button', default: false },
         field: {
             name: 'Очистити весь список',
             description: 'Видалити всі приховані фільми'
@@ -166,6 +154,14 @@
         }
     });
 
-    if (!window.nevershowplugin) startPlugin();
+    if (!window.nevershowplugin) {
+        if (window.appready) {
+            startPlugin();
+        } else {
+            Lampa.Listener.follow('app', function (e) {
+                if (e.type === 'ready') startPlugin();
+            });
+        }
+    }
 
 })();
