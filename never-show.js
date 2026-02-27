@@ -1,4 +1,4 @@
-// NeverShow Plugin v1.7
+// NeverShow Plugin v1.8
 (function () {
     'use strict';
 
@@ -38,6 +38,7 @@
             type: card.type || 'movie'
         });
         saveList(list);
+        console.log('[NeverShow] blocked:', id, getList());
         Lampa.Noty.show('🚫 Додано до прихованих');
     }
 
@@ -50,6 +51,11 @@
         if (!Array.isArray(items)) return items;
         return items.filter(function (c) { return !isBlocked(c); });
     }
+
+    // Глобальна функція для дебагу в консолі
+    window.neverShowDebug = function () {
+        console.log('[NeverShow] BLACKLIST:', getList());
+    };
 
     function openList() {
         var list = getList();
@@ -112,6 +118,7 @@
 
     function startPlugin() {
         window.nevershowplugin = true;
+        console.log('[NeverShow] v1.8 started');
 
         // Кнопка в картці фільму
         Lampa.Listener.follow('full', function (e) {
@@ -125,29 +132,41 @@
 
         // Фільтр пошуку
         Lampa.Listener.follow('search', function (e) {
+            console.log('[NeverShow] SEARCH:', e.type, e.data);
             if (e.type === 'complite' && e.data && Array.isArray(e.data.results)) {
+                var before = e.data.results.length;
                 e.data.results = filterResults(e.data.results);
+                console.log('[NeverShow] SEARCH filtered:', before, '->', e.data.results.length);
             }
         });
 
-        // Фільтр категорій (головна, жанри, популярне)
+        // Фільтр категорій
         Lampa.Listener.follow('category', function (e) {
+            console.log('[NeverShow] CATEGORY:', e.type, e.data);
             if (e.type === 'complite' && e.data && Array.isArray(e.data.results)) {
+                var before = e.data.results.length;
                 e.data.results = filterResults(e.data.results);
+                console.log('[NeverShow] CATEGORY filtered:', before, '->', e.data.results.length);
             }
         });
 
         // Фільтр схожих / рекомендацій
         Lampa.Listener.follow('similar', function (e) {
+            console.log('[NeverShow] SIMILAR:', e.type, e.data);
             if (e.type === 'complite' && e.data && Array.isArray(e.data.results)) {
+                var before = e.data.results.length;
                 e.data.results = filterResults(e.data.results);
+                console.log('[NeverShow] SIMILAR filtered:', before, '->', e.data.results.length);
             }
         });
 
-        // Універсальний фільтр для всіх API запитів
+        // Універсальний фільтр API
         Lampa.Listener.follow('api', function (e) {
+            console.log('[NeverShow] API:', e.type, e.target && e.target.url);
             if (e.type === 'complite' && e.target && e.target.data && Array.isArray(e.target.data.results)) {
+                var before = e.target.data.results.length;
                 e.target.data.results = filterResults(e.target.data.results);
+                console.log('[NeverShow] API filtered:', before, '->', e.target.data.results.length);
             }
         });
     }
