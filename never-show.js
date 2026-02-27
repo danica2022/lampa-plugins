@@ -1,28 +1,20 @@
-// NeverShow Plugin v1.5
+// NeverShow Plugin v1.7
 (function () {
     'use strict';
 
     var STORAGE_KEY = 'never_show_list';
 
-    // Використовуємо localStorage напряму — надійніше для JSON
     function getList() {
         try {
             var raw = localStorage.getItem(STORAGE_KEY);
             var parsed = JSON.parse(raw || '[]');
             return Array.isArray(parsed) ? parsed : [];
-        } catch (e) {
-            console.error('[NeverShow] getList error:', e);
-            return [];
-        }
+        } catch (e) { return []; }
     }
 
     function saveList(list) {
-        try {
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(list));
-            console.log('[NeverShow] saved list:', list);
-        } catch (e) {
-            console.error('[NeverShow] saveList error:', e);
-        }
+        try { localStorage.setItem(STORAGE_KEY, JSON.stringify(list)); }
+        catch (e) { console.error('[NeverShow] saveList error:', e); }
     }
 
     function getId(card) {
@@ -32,15 +24,12 @@
     function isBlocked(card) {
         var id = getId(card);
         if (!id) return false;
-        var blocked = getList().some(function (i) { return String(i.id) === id; });
-        return blocked;
+        return getList().some(function (i) { return String(i.id) === id; });
     }
 
     function block(card) {
         var id = getId(card);
-        console.log('[NeverShow] block called, id:', id);
-        if (!id) { console.warn('[NeverShow] no id on card:', card); return; }
-        if (isBlocked(card)) { console.log('[NeverShow] already blocked'); return; }
+        if (!id || isBlocked(card)) return;
         var list = getList();
         list.push({
             id: id,
@@ -49,20 +38,21 @@
             type: card.type || 'movie'
         });
         saveList(list);
-        console.log('[NeverShow] list after block:', getList());
         Lampa.Noty.show('🚫 Додано до прихованих');
     }
 
     function unblock(id) {
-        var list = getList().filter(function (i) { return String(i.id) !== String(id); });
-        saveList(list);
+        saveList(getList().filter(function (i) { return String(i.id) !== String(id); }));
         Lampa.Noty.show('✅ Видалено з прихованих');
+    }
+
+    function filterResults(items) {
+        if (!Array.isArray(items)) return items;
+        return items.filter(function (c) { return !isBlocked(c); });
     }
 
     function openList() {
         var list = getList();
-        console.log('[NeverShow] openList, items:', list.length);
-
         var html = '<div style="padding:2em 3em;">';
         if (!list.length) {
             html += '<div style="opacity:.6;font-size:1.1em;">Список порожній</div>';
@@ -108,7 +98,6 @@
             '</div>');
 
         btn.on('hover:enter', function () {
-            console.log('[NeverShow] button clicked, card:', card);
             if (isBlocked(card)) {
                 unblock(String(card.id));
                 btn.find('span').text('Ніколи не показувати');
@@ -119,33 +108,46 @@
         });
 
         root.find('.full-start-new__buttons').append(btn);
-        console.log('[NeverShow] button added to card:', getId(card));
     }
 
     function startPlugin() {
         window.nevershowplugin = true;
-        console.log('[NeverShow] startPlugin v1.5');
 
+        // Кнопка в картці фільму
         Lampa.Listener.follow('full', function (e) {
-            // Фільтр результатів
-            if (e.type === 'complite' && e.data) {
-                if (Array.isArray(e.data.results)) {
-                    var before = e.data.results.length;
-                    e.data.results = e.data.results.filter(function (c) { return !isBlocked(c); });
-                    console.log('[NeverShow] filtered results:', before, '->', e.data.results.length);
-                }
-            }
-
-            // Кнопка в картці
             if (e.type === 'build' && e.name === 'start') {
-                console.log('[NeverShow] full build start event:', e);
                 var root = e.item && e.item.html ? e.item.html : null;
                 var card = e.data && e.data.movie ? e.data.movie : null;
-                if (!root || !card) {
-                    console.warn('[NeverShow] missing root or card', root, card);
-                    return;
-                }
+                if (!root || !card) return;
                 addButton(root, card);
+            }
+        });
+
+        // Фільтр пошуку
+        Lampa.Listener.follow('search', function (e) {
+            if (e.type === 'complite' && e.data && Array.isArray(e.data.results)) {
+                e.data.results = filterResults(e.data.results);
+            }
+        });
+
+        // Фільтр категорій (головна, жанри, популярне)
+        Lampa.Listener.follow('category', function (e) {
+            if (e.type === 'complite' && e.data && Array.isArray(e.data.results)) {
+                e.data.results = filterResults(e.data.results);
+            }
+        });
+
+        // Фільтр схожих / рекомендацій
+        Lampa.Listener.follow('similar', function (e) {
+            if (e.type === 'complite' && e.data && Array.isArray(e.data.results)) {
+                e.data.results = filterResults(e.data.results);
+            }
+        });
+
+        // Універсальний фільтр для всіх API запитів
+        Lampa.Listener.follow('api', function (e) {
+            if (e.type === 'complite' && e.target && e.target.data && Array.isArray(e.target.data.results)) {
+                e.target.data.results = filterResults(e.target.data.results);
             }
         });
     }
