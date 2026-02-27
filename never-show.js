@@ -1,4 +1,4 @@
-// NeverShow Plugin v1.3
+// NeverShow Plugin v1.4
 (function () {
     'use strict';
 
@@ -18,6 +18,23 @@
         return getList().some(function (i) { return String(i.id) === String(card.id); });
     }
 
+    // Ховаємо всі вже відрендерені картки з цим id
+    function hideRenderedCards(id) {
+        $('.card').each(function () {
+            var el = $(this);
+            var cardId = el.data('id') || el.attr('data-id');
+            if (cardId && String(cardId) === String(id)) {
+                el.closest('.card__wrap, .card, [data-id]').fadeOut(300, function () {
+                    $(this).remove();
+                });
+            }
+        });
+        // Також шукаємо в списках через батьківський елемент
+        $('[data-id="' + id + '"]').each(function () {
+            $(this).fadeOut(300, function () { $(this).remove(); });
+        });
+    }
+
     function block(card) {
         if (!card || !card.id || isBlocked(card)) return;
         var list = getList();
@@ -28,12 +45,19 @@
             type: card.type || 'movie'
         });
         saveList(list);
-        Lampa.Noty.show('Додано до прихованих');
+        hideRenderedCards(String(card.id));
+        Lampa.Noty.show('🚫 Додано до прихованих');
     }
 
     function unblock(id) {
         saveList(getList().filter(function (i) { return String(i.id) !== String(id); }));
-        Lampa.Noty.show('Видалено з прихованих');
+        Lampa.Noty.show('✅ Видалено з прихованих');
+    }
+
+    // Фільтруємо масив карток
+    function filterResults(items) {
+        if (!Array.isArray(items)) return items;
+        return items.filter(function (c) { return !isBlocked(c); });
     }
 
     function openList() {
@@ -79,7 +103,6 @@
     }
 
     function addButton(root, card) {
-        // Прибираємо стару кнопку якщо є
         root.find('.ns-btn').remove();
 
         var blocked = isBlocked(card);
@@ -106,21 +129,63 @@
     function startPlugin() {
         window.nevershowplugin = true;
 
-        // Фільтр у всіх списках
+        // Фільтр для всіх джерел даних
         Lampa.Listener.follow('full', function (e) {
-            if (e.type === 'complite' && e.data && Array.isArray(e.data.results)) {
-                e.data.results = e.data.results.filter(function (c) { return !isBlocked(c); });
+            // Фільтр результатів пошуку / категорій
+            if (e.type === 'complite') {
+                if (e.data) {
+                    if (Array.isArray(e.data.results))  e.data.results  = filterResults(e.data.results);
+                    if (Array.isArray(e.data.items))    e.data.items    = filterResults(e.data.items);
+                    if (Array.isArray(e.data.backdrops))e.data.backdrops= filterResults(e.data.backdrops);
+                }
+            }
+            // Кнопка в картці фільму
+            if (e.type === 'build' && e.name === 'start') {
+                var root = e.item && e.item.html ? e.item.html : null;
+                if (!root) return;
+                var card = e.data && e.data.movie ? e.data.movie : null;
+                if (!card) return;
+                addButton(root, card);
             }
         });
 
-        // Кнопка в картці фільму — точний патерн з Nightingale
-        Lampa.Listener.follow('full', function (e) {
-            if (e.type !== 'build' || e.name !== 'start') return;
-            var root = e.item && e.item.html ? e.item.html : null;
-            if (!root) return;
-            var card = e.data && e.data.movie ? e.data.movie : null;
-            if (!card) return;
-            addButton(root, card);
+        // Фільтр для каталогу / пошуку / рекомендацій
+        Lampa.Listener.follow('catalog', function (e) {
+            if (e.type === 'complite' && e.data) {
+                if (Array.isArray(e.data.results)) e.data.results = filterResults(e.data.results);
+                if (Array.isArray(e.data.items))   e.data.items   = filterResults(e.data.items);
+            }
+        });
+
+        Lampa.Listener.follow('search', function (e) {
+            if (e.results) e.results = filterResults(e.results);
+            if (e.data && Array.isArray(e.data.results)) e.data.results = filterResults(e.data.results);
+        });
+
+        // Ховаємо вже відрендерені картки при завантаженні
+        Lampa.Listener.follow('app', function (e) {
+            if (e.type === 'ready') applyDomFilter();
+        });
+
+        // MutationObserver — ховає картки одразу при появі в DOM
+        var observer = new MutationObserver(function () {
+            applyDomFilter();
+        });
+        observer.observe(document.body, { childList: true, subtree: true });
+    }
+
+    // Ховаємо заблоковані картки прямо в DOM
+    function applyDomFilter() {
+        var list = getList();
+        if (!list.length) return;
+        list.forEach(function (item) {
+            // Lampa рендерить картки з атрибутом data-id або в середині елемента
+            $('[data-id="' + item.id + '"]:visible').each(function () {
+                var el = $(this);
+                // Не чіпаємо кнопку в картці фільму
+                if (el.hasClass('ns-item') || el.hasClass('ns-btn')) return;
+                el.hide();
+            });
         });
     }
 
@@ -134,24 +199,15 @@
     Lampa.SettingsApi.addParam({
         component: 'never_show',
         param: { name: 'never_show_open', type: 'button', default: false },
-        field: {
-            name: 'Переглянути список прихованих',
-            description: 'Тут можна розблокувати фільми'
-        },
+        field: { name: 'Переглянути список прихованих', description: 'Тут можна розблокувати фільми' },
         onChange: function () { openList(); }
     });
 
     Lampa.SettingsApi.addParam({
         component: 'never_show',
         param: { name: 'never_show_clear', type: 'button', default: false },
-        field: {
-            name: 'Очистити весь список',
-            description: 'Видалити всі приховані фільми'
-        },
-        onChange: function () {
-            saveList([]);
-            Lampa.Noty.show('Список очищено');
-        }
+        field: { name: 'Очистити весь список', description: 'Видалити всі приховані фільми' },
+        onChange: function () { saveList([]); Lampa.Noty.show('Список очищено'); }
     });
 
     if (!window.nevershowplugin) {
